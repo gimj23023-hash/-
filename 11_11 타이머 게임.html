@@ -1,0 +1,341 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>11:11 타이머 게임</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: #111827;
+    color: #f9fafb;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+  body {
+    display: grid;
+    place-items: center;
+    padding: 20px;
+  }
+  .app {
+    width: min(720px, 100%);
+    text-align: center;
+  }
+  /* 난이도 선택 버튼 영역 */
+  .difficulty-selector {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .diff-btn {
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    border-radius: 10px;
+    border: 1px solid #374151;
+    background: #1f2937;
+    color: #9ca3af;
+    cursor: pointer;
+    transition: all 0.2s;
+    min-width: auto;
+    min-height: auto;
+  }
+  .diff-btn.active {
+    background: #3b82f6;
+    border-color: #3b82f6;
+    color: #fff;
+  }
+
+  .status {
+    color: #9ca3af;
+    font-size: 15px;
+    margin-bottom: 14px;
+  }
+  .dot {
+    display: inline-block;
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    background: #6b7280;
+    margin-right: 7px;
+    vertical-align: 1px;
+  }
+  .dot.running { background: #22c55e; }
+
+  /* 숫자 너비 흔들림 방지를 위한 고정 레이아웃 및 폰트 설정 */
+  .timer-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    min-height: 170px;
+  }
+  .timer {
+    font-size: clamp(64px, 20vw, 150px);
+    line-height: 1;
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+    user-select: none;
+    display: inline-block;
+    text-align: center;
+    white-space: nowrap;
+    /* 고정 폭 유지 스타일 추가 */
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  }
+  .target {
+    margin-top: 18px;
+    color: #9ca3af;
+    font-size: 15px;
+  }
+  .target strong { color: #fff; }
+  .buttons {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 28px;
+  }
+  button {
+    min-width: 110px;
+    min-height: 52px;
+    padding: 12px 22px;
+    border: 1px solid #374151;
+    border-radius: 14px;
+    background: #1f2937;
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button.primary { background: #2563eb; border-color: #2563eb; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button:not(:disabled):active { transform: scale(.98); }
+  .result {
+    min-height: 70px;
+    margin-top: 24px;
+    padding: 18px;
+    border: 1px solid #374151;
+    border-radius: 16px;
+    color: #9ca3af;
+  }
+  .success { color: #4ade80; font-weight: 800; }
+  .warning { color: #fbbf24; font-weight: 700; }
+  .info {
+    margin-top: 20px;
+    color: #6b7280;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+  @media (max-width: 420px) {
+    body { padding: 16px; }
+    .buttons { gap: 8px; }
+    button { flex: 1 1 30%; min-width: 0; padding: 10px 12px; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <!-- 1. 난이도 선택 버튼 -->
+  <div class="difficulty-selector">
+    <button id="diffEasy" class="diff-btn">쉬움 모드</button>
+    <button id="diffHard" class="diff-btn active">어려움 모드</button>
+  </div>
+
+  <div class="status">
+    <span id="dot" class="dot"></span><span id="status">대기 중</span>
+  </div>
+
+  <div class="timer-container">
+    <div id="display" class="timer" aria-live="polite">00:00</div>
+  </div>
+
+  <div class="target">
+    표시 형식: <strong>초 : 100분의 1초</strong><br>
+    목표: <strong id="targetDesc">정확히 11:11 (5초 뒤 숫자 가려짐)</strong>
+  </div>
+
+  <div class="buttons">
+    <button id="start" class="primary">시작</button>
+    <button id="stop" disabled>정지</button>
+    <button id="reset">초기화</button>
+  </div>
+
+  <div id="result" class="result" aria-live="assertive">
+    시작 버튼을 누르면 도전이 시작됩니다.
+  </div>
+
+  <div class="info" id="modeInfo">
+    현재 어려움 모드: 시작 후 5초가 지나면 타이머 숫자가 숨겨집니다.
+  </div>
+</main>
+
+<script>
+(() => {
+  "use strict";
+
+  const display = document.getElementById("display");
+  const startButton = document.getElementById("start");
+  const stopButton = document.getElementById("stop");
+  const resetButton = document.getElementById("reset");
+  const result = document.getElementById("result");
+  const status = document.getElementById("status");
+  const dot = document.getElementById("dot");
+
+  const diffEasyBtn = document.getElementById("diffEasy");
+  const diffHardBtn = document.getElementById("diffHard");
+  const targetDesc = document.getElementById("targetDesc");
+  const modeInfo = document.getElementById("modeInfo");
+
+  const TARGET_HUNDREDTHS = 11 * 100 + 11; // 11.11초
+  const HIDE_AFTER_MS = 5000; // 어려움 모드 시 5초 뒤 숨김
+  
+  let startTime = 0;
+  let running = false;
+  let frameId = null;
+  let isHardMode = true; // 기본값: 어려움 모드
+
+  function setDifficulty(hard) {
+    if (running) return; // 진행 중에는 변경 불가
+    isHardMode = hard;
+    if (isHardMode) {
+      diffHardBtn.classList.add("active");
+      diffEasyBtn.classList.remove("active");
+      targetDesc.textContent = "정확히 11:11 (5초 뒤 숫자 가려짐)";
+      modeInfo.textContent = "현재 어려움 모드: 시작 후 5초가 지나면 타이머 숫자가 숨겨집니다.";
+    } else {
+      diffEasyBtn.classList.add("active");
+      diffHardBtn.classList.remove("active");
+      targetDesc.textContent = "정확히 11:11 (끝까지 숫자가 보임)";
+      modeInfo.textContent = "현재 쉬움 모드: 타이머 숫자가 숨겨지지 않고 끝까지 표시됩니다.";
+    }
+  }
+
+  diffEasyBtn.addEventListener("click", () => setDifficulty(false));
+  diffHardBtn.addEventListener("click", () => setDifficulty(true));
+
+  function format(ms) {
+    const hundredths = Math.floor(ms / 10);
+    const seconds = Math.floor(hundredths / 100);
+    const fraction = hundredths % 100;
+
+    return String(seconds).padStart(2, "0") + ":" +
+           String(fraction).padStart(2, "0");
+  }
+
+  function render(ms) {
+    display.textContent = format(ms);
+  }
+
+  function loop(now) {
+    if (!running) return;
+
+    const elapsed = now - startTime;
+
+    // 어려움 모드일 때만 5초 후 숫자 가리기
+    if (isHardMode && elapsed >= HIDE_AFTER_MS) {
+      display.textContent = "--:--";
+    } else {
+      render(elapsed);
+    }
+
+    frameId = requestAnimationFrame(loop);
+  }
+
+  function start() {
+    if (running) return;
+
+    startTime = performance.now();
+    running = true;
+
+    render(0);
+    status.textContent = "도전 중";
+    dot.classList.add("running");
+
+    result.innerHTML = "11:11을 향해 도전 중입니다.";
+
+    startButton.disabled = true;
+    stopButton.disabled = false;
+    diffEasyBtn.disabled = true;
+    diffHardBtn.disabled = true;
+
+    frameId = requestAnimationFrame(loop);
+  }
+
+  function stop() {
+    if (!running) return;
+
+    const elapsed = performance.now() - startTime;
+    running = false;
+
+    if (frameId !== null) {
+      cancelAnimationFrame(frameId);
+      frameId = null;
+    }
+
+    render(elapsed);
+    status.textContent = "도전 종료";
+    dot.classList.remove("running");
+
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    diffEasyBtn.disabled = false;
+    diffHardBtn.disabled = false;
+
+    const measured = Math.floor(elapsed / 10);
+
+    // 정확히 맞춘 경우 (빼빼로 감성을 담은 이모지 조합 적용)
+    if (measured === TARGET_HUNDREDTHS) {
+      result.innerHTML =
+        '<span class="success">🍫 성공! 정확히 11:11에 정지했습니다.</span>';
+      return;
+    }
+
+    const difference = measured - TARGET_HUNDREDTHS;
+    const absolute = Math.abs(difference);
+    const sec = Math.floor(absolute / 100);
+    const hundredths = absolute % 100;
+
+    // 요구하신 형식 반영: "00:37초 빠르게 눌렀습니다." 또는 "00:42초 느리게 눌렀습니다."
+    const timeText = String(sec).padStart(2, "0") + ":" + String(hundredths).padStart(2, "0");
+    const direction = difference < 0 ? "빠르게" : "느리게";
+
+    result.innerHTML =
+      `<span class="warning">도전 종료</span><br>` +
+      `<strong>${timeText}초 ${direction} 눌렀습니다.</strong>`;
+  }
+
+  function reset() {
+    running = false;
+
+    if (frameId !== null) {
+      cancelAnimationFrame(frameId);
+      frameId = null;
+    }
+
+    startTime = 0;
+    render(0);
+
+    status.textContent = "대기 중";
+    dot.classList.remove("running");
+
+    startButton.disabled = false;
+    stopButton.disabled = true;
+    diffEasyBtn.disabled = false;
+    diffHardBtn.disabled = false;
+
+    result.textContent = "시작 버튼을 누르면 도전이 시작됩니다.";
+  }
+
+  startButton.addEventListener("click", start);
+  stopButton.addEventListener("click", stop);
+  resetButton.addEventListener("click", reset);
+})();
+</script>
+</body>
+</html>```
